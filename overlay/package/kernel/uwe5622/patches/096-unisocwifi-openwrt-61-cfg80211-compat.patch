@@ -1,0 +1,65 @@
+From: openwrt-orangepi3lts build <noreply@localhost>
+Subject: [PATCH] unisocwifi: force 6.1 cfg80211 callbacks for the 23.05 backport
+
+ImmortalWrt 23.05 ships a 6.1-era cfg80211 backport (link_id in the key
+ops, links[0].bss in roam_info) while the kernel reports 5.15 in
+LINUX_VERSION_CODE, so all version guards pick the legacy prototypes.
+OPENWRT_CFG80211_61_COMPAT selects the 6.1 variants.
+
+---
+--- a/unisocwifi/cfg80211.c
++++ b/unisocwifi/cfg80211.c
+@@ -737,7 +737,7 @@
+ 					     params->cipher, params->seq,
+ 					     mac_addr);
+ }
+-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)) || defined(OPENWRT_CFG80211_61_COMPAT)
+ static int sprdwl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
+ 				   int link_id, u8 key_index, bool pairwise,
+ 				   const u8 *mac_addr,
+@@ -812,7 +812,7 @@
+ 	return sprdwl_del_key(vif->priv, vif->ctx_id, key_index,
+ 			      pairwise, mac_addr);
+ }
+-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)) || defined(OPENWRT_CFG80211_61_COMPAT)
+ static int sprdwl_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev,
+ 				   int link_id, u8 key_index, bool pairwise,
+ 				   const u8 *mac_addr)
+@@ -872,7 +872,7 @@
+ }
+ #endif
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)) || defined(OPENWRT_CFG80211_61_COMPAT)
+ static int sprdwl_cfg80211_set_default_key(struct wiphy *wiphy,
+ 					   struct net_device *ndev,
+ 					   int link_id, u8 key_index, bool unicast,
+@@ -1174,7 +1174,7 @@
+ 		cfg80211_chandef_create(&vif->chandef, ch, NL80211_CHAN_NO_HT);
+ }
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)) || defined(OPENWRT_CFG80211_61_COMPAT)
+ static int sprdwl_cfg80211_get_channel(struct wiphy *wiphy,
+ 				       struct wireless_dev *wdev,
+ 				       unsigned int link_id,
+@@ -1277,7 +1277,7 @@
+ 	return ret;
+ }
+ 
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,19, 2))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,19, 2) || defined(OPENWRT_CFG80211_61_COMPAT))
+ static int sprdwl_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *ndev, unsigned int link_id)
+ #else
+ static int sprdwl_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *ndev)
+@@ -2973,7 +2973,7 @@
+ 		   conn_info->status == SPRDWL_ROAM_SUCCESS) {
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+ 		struct cfg80211_roam_info roam_info = {
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)) || defined(OPENWRT_CFG80211_61_COMPAT)
+ 			.links[0].bss = bss,
+ #else
+ 			.bss = bss,

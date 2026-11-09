@@ -1,0 +1,36 @@
+From: openwrt-orangepi3lts build <noreply@localhost>
+Subject: [PATCH] unisocwifi: adapt channel switch notifies to the 6.1 backport
+
+The 23.05 backport declares cfg80211_ch_switch_notify with link_id and
+punct_bitmap arguments, while the driver picks the 2-argument legacy call
+because the kernel reports 5.15. Use the 4-argument form when
+OPENWRT_CFG80211_61_COMPAT is set.
+
+---
+--- a/unisocwifi/cmdevt.c
++++ b/unisocwifi/cmdevt.c
+@@ -3322,7 +3322,9 @@
+ 						NL80211_CHAN_HT20);
+ 		else
+ 			wl_err("%s, ch is null!\n", __func__);
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9, 0))
++#if defined(OPENWRT_CFG80211_61_COMPAT)
++		cfg80211_ch_switch_notify(vif->ndev, &chandef, 0, 0);
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9, 0))
+ 		cfg80211_ch_switch_notify(vif->ndev, &chandef, 0);
+ #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5,19, 2))
+ 		cfg80211_ch_switch_notify(vif->ndev, &chandef, 0);
+--- a/unisocwifi/11h.c
++++ b/unisocwifi/11h.c
+@@ -75,7 +75,11 @@
+ 		container_of(delayed_work, struct sprdwl_vif,
+ 			     dfs_chan_sw_work);
+ 
++#if defined(OPENWRT_CFG80211_61_COMPAT)
++	cfg80211_ch_switch_notify(vif->ndev, &vif->dfs_chandef, 0, 0);
++#else
+ 	cfg80211_ch_switch_notify(vif->ndev, &vif->dfs_chandef);
++#endif
+ }
+ 
+ /*This is delayed work emits CAC finished event for cfg80211 if
