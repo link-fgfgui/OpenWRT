@@ -91,6 +91,12 @@ jobs:
             assets+=("$f")
           done < <(find ".work/immortalwrt-23.05/bin/packages" -type f \
             \( -name 'kmod-uwe5622*.ipk' -o -name 'uwe5622-firmware*.ipk' \) -print0 2>/dev/null)
+          ipk_archive="$RUNNER_TEMP/ipk-23.05.7-aarch64_cortex-a53.tar.gz"
+          tar -czf "$ipk_archive" \
+            --transform='s#^#ipk-23.05.7/#' \
+            -C ".work/immortalwrt-23.05/bin" \
+            targets/sunxi/cortexa53/packages packages/aarch64_cortex-a53
+          assets+=("$ipk_archive")
           if [ "${#assets[@]}" -eq 0 ]; then
             echo 'No release assets found' >&2
             exit 1
