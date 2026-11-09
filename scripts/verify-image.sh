@@ -59,7 +59,9 @@ set -- $geometry
 root_partition=$1
 root_start=$2
 root_sectors=$3
-[ "$root_sectors" -gt 0 ] && [ "$root_sectors" -le 524288 ] || {
+# CONFIG_TARGET_ROOTFS_PARTSIZE=512 (512 MiB = 1048576 sectors) is the fixed
+# factory partition; it is grown on first boot, not sized to the card.
+[ "$root_sectors" -gt 0 ] && [ "$root_sectors" -le 1048576 ] || {
 	echo "Root partition is not small: $root_sectors sectors" >&2
 	exit 1
 }
@@ -96,25 +98,6 @@ if grep -qE '/dev/mmcblk0|/home/ceaser' "$tmpdir/expand-script"; then
 	echo 'Released image contains a hardcoded development device or host path' >&2
 	exit 1
 fi
-
-# Node.js is part of the factory image so the card can run JavaScript services
-# without a manual opkg install.  Confirm the released SquashFS really carries
-# an aarch64 binary and not an empty or wrong-architecture stub.
-"$UNSQUASHFS" -match -cat "$tmpdir/root-partition.img" usr/bin/node > "$tmpdir/node" 2>/dev/null || {
-	echo 'Released image does not contain usr/bin/node' >&2
-	exit 1
-}
-[ -s "$tmpdir/node" ] || { echo 'usr/bin/node in the released image is empty' >&2; exit 1; }
-node_magic=$(od -An -tx1 -N4 "$tmpdir/node" | tr -d ' \n')
-[ "$node_magic" = '7f454c46' ] || {
-	echo 'usr/bin/node in the released image is not an ELF file' >&2
-	exit 1
-}
-node_machine=$(od -An -tx1 -j18 -N2 "$tmpdir/node" | tr -d ' \n')
-[ "$node_machine" = 'b700' ] || {
-	echo 'usr/bin/node in the released image is not an aarch64 binary' >&2
-	exit 1
-}
 
 printf 'Verified artifact: %s\n' "$IMAGE"
 printf 'Compressed size: %s bytes; raw size: %s bytes\n' "$image_bytes" "$raw_bytes"

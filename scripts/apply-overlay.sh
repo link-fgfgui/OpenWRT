@@ -8,50 +8,47 @@ fi
 
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 OW_DIR="$1"
-KERNEL_CONFIG="$OW_DIR/target/linux/sunxi/config-6.6"
-CORTEXA53_KERNEL_CONFIG="$OW_DIR/target/linux/sunxi/cortexa53/config-6.6"
+CORTEXA53_KERNEL_CONFIG="$OW_DIR/target/linux/sunxi/cortexa53/config-5.15"
+mkdir -p "$(dirname "$CORTEXA53_KERNEL_CONFIG")"
 
-find "$HERE/overlay" -type f -print | while IFS= read -r source_file; do
-	relative_path=${source_file#"$HERE/overlay/"}
-	target_file="$OW_DIR/$relative_path"
-	if [ -f "$target_file" ] && cmp -s "$source_file" "$target_file"; then
-		continue
-	fi
-	mkdir -p "$(dirname "$target_file")"
-	cp -p "$source_file" "$target_file"
-	touch "$target_file"
-done
+copy_overlay() {
+	_overlay="$1"
+	[ -d "$_overlay" ] || return 0
+	find "$_overlay" -type f -print | while IFS= read -r source_file; do
+		relative_path=${source_file#"$_overlay"/}
+		target_file="$OW_DIR/$relative_path"
+		if [ -f "$target_file" ] && cmp -s "$source_file" "$target_file"; then
+			continue
+		fi
+		mkdir -p "$(dirname "$target_file")"
+		cp -p "$source_file" "$target_file"
+		touch "$target_file"
+	done
+}
+
+copy_overlay "$HERE/overlay"
+copy_overlay "$HERE/overlay-23.05"
 
 # Drop this obsolete project patch from an existing local build tree. It forces
-# a three-argument callback although the pinned OpenWrt 24.10 header expects
-# the two-argument set_wiphy_params callback.
+# a three-argument callback although the pinned cfg80211 backport expects the
+# two-argument set_wiphy_params callback.
 rm -f "$OW_DIR/package/kernel/uwe5622/patches/080-cfg80211-set-wiphy-params-backport-radio-idx.patch"
-
-# The overlay copies files but never deletes them, so patches that the feeds
-# still ship have to be removed explicitly.  Node 24 replaced this macOS-only
-# patch: its context targets the old gyp make.py template, and this project
-# only ever builds on Linux.
-rm -f "$OW_DIR/feeds/packages/lang/node/patches/007-fix_host_build_on_macos.patch"
-
-# Linux 6.6 receives a backport that makes REALTEK_PHY_HWMON a visible Kconfig
-# option. Since REALTEK_PHY is enabled for sunxi, pin the optional HWMON choice
-# in the kernel config fragment so non-interactive syncconfig does not prompt.
-if ! grep -q '^CONFIG_REALTEK_PHY=y$' "$KERNEL_CONFIG"; then
-	echo "Expected CONFIG_REALTEK_PHY=y in $KERNEL_CONFIG" >&2
-	exit 1
-fi
-HWMON_DISABLED='# CONFIG_REALTEK_PHY_HWMON is not set'
-if ! grep -Fqx "$HWMON_DISABLED" "$KERNEL_CONFIG" || grep -q '^CONFIG_REALTEK_PHY_HWMON=' "$KERNEL_CONFIG"; then
-	sed -i '/^CONFIG_REALTEK_PHY_HWMON=/d; /^# CONFIG_REALTEK_PHY_HWMON is not set$/d' "$KERNEL_CONFIG"
-	printf '%s\n' "$HWMON_DISABLED" >> "$KERNEL_CONFIG"
-fi
 
 # The H6 RTC driver also registers the OSC32K_FANOUT clock provider used by
 # the Orange Pi 3 LTS Wi-Fi MMC power sequence. Without RTC_CLASS the provider
 # is omitted, leaving wifi-pwrseq deferred and preventing mmc1 from probing.
-for symbol in RTC_CLASS RTC_DRV_SUN6I; do
-	if ! grep -Fqx "CONFIG_${symbol}=y" "$CORTEXA53_KERNEL_CONFIG"; then
-		sed -i "/^CONFIG_${symbol}=/d; /^# CONFIG_${symbol} is not set$/d" "$CORTEXA53_KERNEL_CONFIG"
-		printf 'CONFIG_%s=y\n' "$symbol" >> "$CORTEXA53_KERNEL_CONFIG"
+append_kernel_symbol() {
+	_symbol="$1"
+	_config="$2"
+	if ! grep -Fqx "CONFIG_${_symbol}=y" "$_config"; then
+		sed -i "/^CONFIG_${_symbol}=/d; /^# CONFIG_${_symbol} is not set$/d" "$_config"
+		printf 'CONFIG_%s=y\n' "$_symbol" >> "$_config"
 	fi
+}
+
+# The LTS board uses a Motorcomm YT8531C RGMII PHY. 23.05 ships the v6.3
+# backport that adds YT8531 support, but the symbol is not enabled in the
+# sunxi cortexa53 config fragment.
+for symbol in RTC_CLASS RTC_DRV_SUN6I MOTORCOMM_PHY; do
+	append_kernel_symbol "$symbol" "$CORTEXA53_KERNEL_CONFIG"
 done
