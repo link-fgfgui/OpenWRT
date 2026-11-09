@@ -1,0 +1,25 @@
+# Debian 12 build environment for the Orange Pi 3 LTS ImmortalWrt 23.05 image.
+#
+# The image has to be built once with network access:
+#   podman build -t localhost/opi3lts-builder:23.05 containers
+#
+# gcc-12 matches the gcc-12.3.0 toolchain that ImmortalWrt 23.05 builds for
+# aarch64, and the package set is what OpenWrt's prerequisite checks expect.
+# fdisk supplies sfdisk, which scripts/verify-image.sh uses to inspect the
+# generated SD-card image.
+FROM docker.io/library/debian:12
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bc bison build-essential bzip2 ca-certificates cpio curl \
+        device-tree-compiler diffutils dosfstools e2fsprogs fakeroot fdisk file flex \
+        g++ gawk gcc gettext git gperf intltool libelf-dev libncurses-dev \
+        libssl-dev libtool libxml-parser-perl make mercurial mtools patch perl \
+        pkg-config python3 python3-distutils python3-pyelftools \
+        python3-setuptools python3-yaml quilt rsync subversion swig \
+        texinfo time unzip uuid-dev wget xz-utils zip zlib1g-dev zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
