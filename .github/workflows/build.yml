@@ -189,6 +189,9 @@ jobs:
     needs: packages-2
     runs-on: ubuntu-22.04
     timeout-minutes: 358
+    permissions:
+      contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - name: Install build dependencies
@@ -232,6 +235,51 @@ jobs:
             .work/immortalwrt-23.05/bin/packages/*/base/kmod-uwe5622*.ipk
             .work/immortalwrt-23.05/bin/packages/*/base/uwe5622-firmware*.ipk
           if-no-files-found: warn
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v23.05.7-${{ github.run_number }}"
+          dir=".work/immortalwrt-23.05/bin/targets/sunxi/cortexa53"
+          notes="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "ImmortalWrt v23.05.7 for Orange Pi 3 LTS"
+            echo
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo '```'
+            cat "$dir/sha256sums"
+            echo '```'
+          } > "$notes"
+          assets=()
+          while IFS= read -r -d '' f; do
+            assets+=("$f")
+          done < <(find "$dir" -maxdepth 1 -type f \
+            \( -name '*.img.gz' -o -name '*.manifest' -o -name 'sha256sums' \) -print0)
+          while IFS= read -r -d '' f; do
+            assets+=("$f")
+          done < <(find "$dir/packages" -maxdepth 1 -type f \
+            \( -name 'kmod-uwe5622*.ipk' -o -name 'uwe5622-firmware*.ipk' \) -print0 2>/dev/null)
+          while IFS= read -r -d '' f; do
+            assets+=("$f")
+          done < <(find ".work/immortalwrt-23.05/bin/packages" -type f \
+            \( -name 'kmod-uwe5622*.ipk' -o -name 'uwe5622-firmware*.ipk' \) -print0 2>/dev/null)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo 'No release assets found' >&2
+            exit 1
+          fi
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "${assets[@]}" \
+              -R "$GITHUB_REPOSITORY" \
+              --title "ImmortalWrt 23.05.7 for Orange Pi 3 LTS (build ${{ github.run_number }})" \
+              --notes-file "$notes" \
+              --target "$GITHUB_SHA"
+          fi
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v4
