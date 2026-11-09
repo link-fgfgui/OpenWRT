@@ -6,18 +6,18 @@
 
 | 部分 | 项目实现 |
 | --- | --- |
-| 内核 | OpenWrt 24.10 固定源码，Linux 6.6 |
+| 内核 | ImmortalWrt v23.05.7（Linux 5.15） |
 | 驱动 | `kmod-uwe5622`，使用 `armbian/uwe5622` commit `d6bec7538a0b4b67e35715ad71eaa056555524cb` |
 | 模块 | `uwe5622_bsp_sdio.ko`（SDIO/WCN 总线）和 `sprdwl_ng.ko`（cfg80211 Wi-Fi） |
 | 固件 | `uwe5622-firmware`，安装到 `/lib/firmware/uwe5622/` |
 | 无线管理 | OpenWrt mac80211/cfg80211、hostapd、wifi-scripts |
 | 板级硬件 | 本项目的 Orange Pi 3 LTS DTS：`sun50i-h6-orangepi-3-lts.dts` |
 
-驱动包的源码版本、内核构建参数和补丁位于 `overlay/package/kernel/uwe5622/`；固件文件及安装规则位于 `overlay/package/firmware/uwe5622-firmware/`。
+驱动包的 Makefile 位于 `overlay-23.05/package/kernel/uwe5622/`；补丁位于 `overlay/package/kernel/uwe5622/patches/`，固件文件及安装规则位于 `overlay/package/firmware/uwe5622-firmware/`。
 
 ## 设备树与 SDIO 上电
 
-UWE5622 通过 H6 的 **MMC1 / SDIO** 总线连接。设备树补丁在 `overlay/target/linux/sunxi/patches-6.6/460-arm64-dts-allwinner-add-orangepi-3-lts.patch`，关键设置包括：
+UWE5622 通过 H6 的 **MMC1 / SDIO** 总线连接。设备树补丁在 `overlay-23.05/target/linux/sunxi/patches-5.15/460-arm64-dts-allwinner-add-orangepi-3-lts.patch`，关键设置包括：
 
 - `mmc1` 使用 4-bit、不可移除 SDIO 设备，并引用 `wifi_pwrseq`。
 - `vcc33-wifi` 通过 PH7 控制 Wi-Fi 3.3 V 电源。
@@ -30,16 +30,16 @@ UWE5622 通过 H6 的 **MMC1 / SDIO** 总线连接。设备树补丁在 `overlay
 
 ## 驱动补丁与内核 API
 
-驱动来自树外的社区内核模块，需适配 OpenWrt 提供的 Linux 6.6 和 mac80211 backport。当前补丁主要处理：
+驱动来自树外的社区内核模块，需适配 ImmortalWrt 23.05 的 Linux 5.15 和 6.1 时代的 mac80211 backport。当前补丁主要处理：
 
 - cfg80211 backport API 兼容，以及外部模块 Kbuild 配置符号传递。
 - cfg80211/netdev 锁使用、连接和漫游状态同步。
-- Linux 6.6 对 station/channel 查询、station dump 和可变长数组的变化。
+- Linux 5.15 对 station/channel 查询、station dump 和可变长数组的变化。
 - 驱动关闭省电时避免误执行芯片断电。
 
 补丁按序号存放在 `overlay/package/kernel/uwe5622/patches/`。不要恢复旧的 `080-cfg80211-set-wiphy-params-backport-radio-idx.patch`：当前固定的 OpenWrt cfg80211 回调要求两参数函数；该旧补丁会强制三参数签名，导致 `incompatible-pointer-types` 编译失败。
 
-构建必须先准备目标内核和 mac80211 backport，再编译 `package/kernel/uwe5622`。本项目脚本和 Actions 会按该顺序构建，并检查最终镜像清单及 UWE5622 驱动/固件包。
+构建必须先准备目标内核和 mac80211 backport，再编译 `package/kernel/uwe5622`。本项目脚本会按该顺序构建，并检查最终镜像清单及 UWE5622 驱动/固件包。
 
 ## 延迟加载与默认 AP
 
@@ -56,6 +56,8 @@ UWE5622 通过 H6 的 **MMC1 / SDIO** 总线连接。设备树补丁在 `overlay
 
 选择 2.4 GHz HT20 是因为它已在该板上完成 AP、手机连接和上网验证。曾测试的 VHT80 配置在当前 hostapd 中因 `ieee80211ac` / `vht_*` 配置项不识别而失败；本项目不把 5 GHz VHT80 宣称为已验证功能。
 
+> 23.05 使用 hostapd 2023-09-08 快照，5 GHz beacon 仍会带 DS Params IE，UWE5622 固件可以从中取到信道。
+
 通过 UCI 修改 SSID、密码和信道：
 
 ```sh
@@ -65,6 +67,19 @@ uci set wireless.radio0.channel='11'
 uci commit wireless
 wifi reload
 ```
+
+23.05 下切换到 5 GHz 的示例（只有一个 radio，会替换 2.4 GHz AP；149 为非 DFS 信道）：
+
+```sh
+uci set wireless.radio0.band='5g'
+uci set wireless.radio0.channel='149'
+uci set wireless.radio0.htmode='VHT80'
+uci set wireless.radio0.country='CN'
+uci commit wireless
+wifi reload
+```
+
+如果 VHT80 不稳定，先退到 `HT20` 或 `HT40`。52–64 属于 DFS 信道，需要 hostapd 的 DFS/CAC 支持，建议先用 36–48 或 149–165。
 
 ## 实机验证
 
