@@ -53,6 +53,7 @@ jobs:
             .work/immortalwrt-23.05/bin/targets/sunxi/cortexa53/*.img.gz
             .work/immortalwrt-23.05/bin/targets/sunxi/cortexa53/*.manifest
             .work/immortalwrt-23.05/bin/targets/sunxi/cortexa53/sha256sums
+            .work/immortalwrt-23.05/bin/targets/sunxi/cortexa53/profiles.json
             .work/immortalwrt-23.05/bin/targets/sunxi/cortexa53/packages/kmod-uwe5622*.ipk
             .work/immortalwrt-23.05/bin/targets/sunxi/cortexa53/packages/uwe5622-firmware*.ipk
             .work/immortalwrt-23.05/bin/packages/*/base/kmod-uwe5622*.ipk
@@ -81,7 +82,7 @@ jobs:
           while IFS= read -r -d '' f; do
             assets+=("$f")
           done < <(find "$dir" -maxdepth 1 -type f \
-            \( -name '*.img.gz' -o -name '*.manifest' -o -name 'sha256sums' \) -print0)
+            \( -name '*.img.gz' -o -name '*.manifest' -o -name 'sha256sums' -o -name 'profiles.json' \) -print0)
           while IFS= read -r -d '' f; do
             assets+=("$f")
           done < <(find "$dir/packages" -maxdepth 1 -type f \
