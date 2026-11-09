@@ -13,6 +13,17 @@ INCLUDE_ALL_KMODS="${INCLUDE_ALL_KMODS:-1}"
 # network-dependent `make download` step so it can be run separately.
 OFFLINE="${OFFLINE:-0}"
 DOWNLOAD_ONLY="${DOWNLOAD_ONLY:-0}"
+# STAGE splits the build for CI: base builds host tools, the cross toolchain
+# and the kernel; packages compiles the package set; image installs packages
+# and produces the SD-card images.  The default runs every stage in one go.
+STAGE="${STAGE:-all}"
+# PACKAGE_TIMEOUT (seconds) stops package/compile before a CI job timeout so
+# the build tree can still be cached.  A timeout is not treated as an error.
+PACKAGE_TIMEOUT="${PACKAGE_TIMEOUT:-0}"
+case "$STAGE" in
+	all|base|packages|image) ;;
+	*) echo "Unknown STAGE: $STAGE" >&2; exit 2 ;;
+esac
 # Official ImmortalWrt v23.05.7 sunxi/cortexa53 kernel vermagic.  We still
 # build three board-specific symbols (RTC_CLASS, RTC_DRV_SUN6I and
 # MOTORCOMM_PHY) that the official config disables, so the real config hash
@@ -219,33 +230,60 @@ if [ "$DOWNLOAD_ONLY" = 1 ]; then
 	exit 0
 fi
 
-if [ "$OFFLINE" = 1 ]; then
-	echo '>> Offline: skipping source download'
-else
-	echo ">> Download sources"
-	run_logged "$LOG_DIR/download.log" make -j"$JOBS" download
-fi
+if [ "$STAGE" = base ] || [ "$STAGE" = all ]; then
+	if [ "$OFFLINE" = 1 ]; then
+		echo '>> Offline: skipping source download'
+	else
+		echo ">> Download sources"
+		run_logged "$LOG_DIR/download.log" make -j"$JOBS" download
+	fi
 
-echo ">> Build host tools and cross toolchain"
-run_logged "$LOG_DIR/toolchain-install.log" make -j"$JOBS" toolchain/install
+	echo ">> Build host tools and cross toolchain"
+	run_logged "$LOG_DIR/toolchain-install.log" make -j"$JOBS" toolchain/install
 
-echo ">> Build target kernel and modules"
-run_logged "$LOG_DIR/target-linux-compile.log" make -j"$JOBS" target/linux/compile
-if [ -n "$KERNEL_VERMAGIC_OVERRIDE" ]; then
-	VERMAGIC_FILE=$(find "$OW_DIR/build_dir" -path '*/linux-sunxi_cortexa53/linux-*/.vermagic' -print -quit)
-	test -n "$VERMAGIC_FILE" || {
-		echo 'Kernel .vermagic file was not generated' >&2
-		exit 1
-	}
-	echo "$KERNEL_VERMAGIC_OVERRIDE" > "$VERMAGIC_FILE"
-	rm -f "$OW_DIR/tmp/.packageinfo" "$OW_DIR/tmp/.packagedeps"
-	echo ">> Kernel vermagic overridden for official kmods: $KERNEL_VERMAGIC_OVERRIDE"
+	echo ">> Build target kernel and modules"
+	run_logged "$LOG_DIR/target-linux-compile.log" make -j"$JOBS" target/linux/compile
+	if [ -n "$KERNEL_VERMAGIC_OVERRIDE" ]; then
+		VERMAGIC_FILE=$(find "$OW_DIR/build_dir" -path '*/linux-sunxi_cortexa53/linux-*/.vermagic' -print -quit)
+		test -n "$VERMAGIC_FILE" || {
+			echo 'Kernel .vermagic file was not generated' >&2
+			exit 1
+		}
+		echo "$KERNEL_VERMAGIC_OVERRIDE" > "$VERMAGIC_FILE"
+		rm -f "$OW_DIR/tmp/.packageinfo" "$OW_DIR/tmp/.packagedeps"
+		echo ">> Kernel vermagic overridden for official kmods: $KERNEL_VERMAGIC_OVERRIDE"
+	fi
+
+	if [ "$STAGE" = base ]; then
+		echo "Base stage completed: $OW_DIR"
+		exit 0
+	fi
 fi
 
 prepare_fakeroot
 
+if [ "$STAGE" = packages ] && [ "$PACKAGE_TIMEOUT" != 0 ]; then
+	echo ">> Build packages (timeout ${PACKAGE_TIMEOUT}s)"
+	set +e
+	run_logged "$LOG_DIR/package-compile.log" \
+		timeout -k 60 "$PACKAGE_TIMEOUT" make -j"$JOBS" package/compile
+	_package_status=$?
+	set -e
+	if [ "$_package_status" -ne 0 ] && [ "$_package_status" -ne 124 ]; then
+		exit "$_package_status"
+	fi
+	if [ "$_package_status" -eq 124 ]; then
+		echo "Package stage paused before completion: $OW_DIR"
+	fi
+	exit 0
+fi
+
 echo ">> Build packages"
 run_logged "$LOG_DIR/package-compile.log" make -j"$JOBS" package/compile
+if [ "$STAGE" = packages ]; then
+	echo "Package stage completed: $OW_DIR"
+	exit 0
+fi
 
 echo ">> Install packages into the image root"
 run_logged "$LOG_DIR/package-install.log" make -j"$JOBS" package/install
